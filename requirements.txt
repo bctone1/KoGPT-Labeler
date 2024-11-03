@@ -5,9 +5,8 @@ Werkzeug==3.0.1
 # AI/ML
 torch==2.1.0
 transformers==4.37.2
-openai==1.12.0
+openai==1.52.2
 llama-index==0.10.1
-langchain==0.1.12
 
 # 문서 처리
 PyMuPDF==1.23.26
@@ -20,4 +19,4 @@ pandas==2.1.1
 tqdm==4.66.1
 
 # 시스템 모니터링
-psutil==5.9.5
+psutil==5.9.8
