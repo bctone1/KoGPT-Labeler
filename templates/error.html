@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container">
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-8">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h4 class="card-title mb-0">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>오류가 발생했습니다
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="error-details mb-4">
+                        <h5 class="text-danger mb-3">오류 내용:</h5>
+                        <div class="alert alert-danger">
+                            {{ error }}
+                        </div>
+                    </div>
+
+                    {% if error_detail %}
+                    <div class="technical-details mb-4">
+                        <h6 class="text-muted mb-2">기술적 상세:</h6>
+                        <pre class="bg-light p-3 rounded"><code>{{ error_detail }}</code></pre>
+                    </div>
+                    {% endif %}
+
+                    <div class="suggestions">
+                        <h6 class="text-muted mb-2">제안사항:</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-arrow-clockwise me-2"></i>페이지를 새로고침 해보세요.</li>
+                            <li><i class="bi bi-clock-history me-2"></i>잠시 후 다시 시도해보세요.</li>
+                            <li><i class="bi bi-house me-2"></i>홈페이지로 돌아가서 다시 시작해보세요.</li>
+                        </ul>
+                    </div>
+
+                    <div class="mt-4 text-center">
+                        <a href="{{ url_for('main.index') }}" class="btn btn-primary me-2">
+                            <i class="bi bi-house me-1"></i>홈으로
+                        </a>
+                        <button onclick="window.history.back()" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>이전 페이지
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {% if config.DEBUG %}
+            <div class="card mt-4">
+                <div class="card-header bg-warning">
+                    <h5 class="card-title mb-0">디버그 정보</h5>
+                </div>
+                <div class="card-body">
+                    <div class="debug-info">
+                        <pre class="bg-light p-3 rounded"><code>{{ debug_info if debug_info else "디버그 정보 없음" }}</code></pre>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 오류 보고용 함수
+    function reportError() {
+        const errorData = {
+            error: {{ error|tojson }},
+            timestamp: new Date().toISOString(),
+            url: window.location.href,
+            userAgent: navigator.userAgent
+        };
+
+        // 오류 로깅 API 호출 (필요한 경우 구현)
+        console.error('Error reported:', errorData);
+    }
+
+    // 자동 새로고침 타이머 (선택적)
+    let reloadTimer = null;
+    function startReloadTimer() {
+        if (reloadTimer) clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => {
+            window.location.reload();
+        }, 30000); // 30초 후 자동 새로고침
+    }
+
+    // 에러 발생 시 자동으로 오류 보고
+    reportError();
+});
+</script>
+{% endblock %}

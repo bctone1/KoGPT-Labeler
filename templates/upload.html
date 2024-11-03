@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="upload-container">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="card-title mb-0">파인튜닝 데이터셋 생성</h5>
+        </div>
+
+        <div class="card-body">
+            <div class="task-info mb-4">
+                <h6>태스크 설정</h6>
+                <div class="mb-3">
+                    <label for="taskSelect" class="form-label">태스크 선택</label>
+                    <select class="form-select" id="taskSelect">
+                        {% for task_id, task in config.TASK_TEMPLATES.items() %}
+                            <option value="{{ task_id }}">{{ task.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="numExamples" class="form-label">생성할 예제 수</label>
+                    <input type="number" class="form-control" id="numExamples" min="1" max="1000" value="100">
+                    <div class="form-text">1~1000 사이의 숫자를 입력하세요.</div>
+                </div>
+            </div>
+
+            <div class="file-upload-section mb-4">
+                <h6>파일 업로드</h6>
+                <div id="dropZone" class="file-drop-zone">
+                    <div class="text-center">
+                        <i class="bi bi-cloud-upload"></i>
+                        <p>파일을 드래그하거나 클릭하여 업로드</p>
+                        <small class="text-muted">지원 형식: PDF, TXT</small>
+                    </div>
+                </div>
+
+                <div id="fileList" class="mt-3">
+                </div>
+            </div>
+
+            <div class="d-grid">
+                <button id="generateBtn" class="btn btn-primary" disabled>데이터셋 생성</button>
+            </div>
+
+            <div class="progress mt-3" style="display: none;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">
+                    0%
+                </div>
+            </div>
+
+            <div id="result" class="mt-3" style="display: none;">
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const dropZone = document.getElementById('dropZone');
+    const fileList = document.getElementById('fileList');
+    const generateBtn = document.getElementById('generateBtn');
+    const progressBar = document.querySelector('.progress');
+    const progressBarInner = document.querySelector('.progress-bar');
+    const result = document.getElementById('result');
+    const files = new Map();
+
+    // 파일 드래그 앤 드롭 이벤트
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+
+    dropZone.addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.accept = '.txt,.pdf';
+        input.onchange = e => handleFiles(e.target.files);
+        input.click();
+    });
+
+    function handleFiles(fileList) {
+        for (const file of fileList) {
+            if (file.type === 'text/plain' || file.type === 'application/pdf') {
+                files.set(file.name, file);
+                updateFileList();
+            }
+        }
+        generateBtn.disabled = files.size === 0;
+    }
+
+    function updateFileList() {
+        fileList.innerHTML = '';
+        files.forEach((file, name) => {
+            const div = document.createElement('div');
+            div.className = 'file-item';
+            div.innerHTML = `
+                <div class="file-info">
+                    <span>${name}</span>
+                    <span class="file-size">${formatFileSize(file.size)}</span>
+                </div>
+                <span class="remove-file" data-name="${name}">×</span>
+            `;
+            fileList.appendChild(div);
+        });
+
+        document.querySelectorAll('.remove-file').forEach(btn => {
+            btn.onclick = () => {
+                files.delete(btn.dataset.name);
+                updateFileList();
+                generateBtn.disabled = files.size === 0;
+            };
+        });
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // 데이터셋 생성
+    generateBtn.addEventListener('click', async () => {
+        const taskSelect = document.getElementById('taskSelect');
+        const numExamples = document.getElementById('numExamples');
+
+        const formData = new FormData();
+        files.forEach(file => {
+            formData.append('files[]', file);
+        });
+
+        formData.append('task_name', taskSelect.value);
+        formData.append('num_examples', numExamples.value);
+
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                result.innerHTML = `<div class="alert alert-success">
+                    작업이 시작되었습니다. 작업 ID: ${data.task_id}
+                </div>`;
+
+                // 작업 상태 모니터링 시작
+                monitorProgress(data.task_id);
+            } else {
+                throw new Error(data.error || '파일 업로드 중 오류가 발생했습니다.');
+            }
+        } catch (error) {
+            result.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
+            generateBtn.disabled = false;
+            progressBar.style.display = 'none';
+        }
+    });
+
+    async function monitorProgress(taskId) {
+        const checkStatus = async () => {
+            try {
+                const response = await fetch(`/status/${taskId}`);
+                const data = await response.json();
+
+                if (data.status === 'complete') {
+                    progressBarInner.style.width = '100%';
+                    progressBarInner.textContent = '100%';
+                    result.innerHTML = `
+                        <div class="alert alert-success">
+                            <h5>처리 완료</h5>
+                            <p>${data.message}</p>
+                            <p>생성된 예제: ${data.stats.generated}</p>
+                            <p>처리 시간: ${Math.round(data.stats.total_time)}초</p>
+                            <a href="/review" class="btn btn-primary">결과 확인하기</a>
+                        </div>
+                    `;
+                    generateBtn.disabled = false;
+                    return;
+                } else if (data.status === 'error') {
+                    result.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h5>오류 발생</h5>
+                            <p>${data.message}</p>
+                        </div>
+                    `;
+                    generateBtn.disabled = false;
+                    return;
+                }
+
+                progressBarInner.style.width = `${data.progress}%`;
+                progressBarInner.textContent = `${data.progress}%`;
+                result.innerHTML = `
+                    <div class="alert alert-info">
+                        <p>${data.message}</p>
+                    </div>
+                `;
+
+                setTimeout(checkStatus, 1000);
+            } catch (error) {
+                result.innerHTML = `<div class="alert alert-danger">상태 확인 중 오류가 발생했습니다.</div>`;
+                generateBtn.disabled = false;
+            }
+        };
+
+        result.style.display = 'block';
+        await checkStatus();
+    }
+});
+</script>
+{% endblock %}

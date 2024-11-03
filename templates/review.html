@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>생성된 데이터셋 검토</h2>
+        <div class="text-muted">
+            마지막 업데이트: {{ current_time.strftime('Y-%m-%d %H:%M:%S') }}
+        </div>
+    </div>
+
+    {% if datasets %}
+        {% for dataset in datasets %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h3 class="card-title h5 mb-1">{{ dataset.filename }}</h3>
+                            <small>생성일: {{ dataset.created_at.strftime('%Y-%m-%d %H:%M:%S') }} |
+                                   전체 예제 수: {{ dataset.total_examples }}</small>
+                        </div>
+                        <div class="btn-group">
+                            <a href="{{ url_for('main.download_dataset', filename=dataset.filename) }}"
+                               class="btn btn-sm btn-primary">다운로드</a>
+                            <button type="button" class="btn btn-sm btn-secondary"
+                                    onclick="showStats('{{ dataset.filename }}')">통계</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <div id="examples-container-{{ dataset.filename }}">
+                        {% for example in dataset.examples %}
+                            <div class="conversation-box mb-4">
+                                <!-- 시스템 메시지 -->
+                                <div class="system-message mb-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <strong>System Message</strong>
+                                        <span class="badge bg-secondary">시스템 프롬프트</span>
+                                    </div>
+                                    {{ example.messages[0].content }}
+                                </div>
+
+                                <!-- 대화 메시지 -->
+                                {% for message in example.messages[1:] %}
+                                    <div class="message {{ message.role }}">
+                                        <div class="message-header d-flex justify-content-between align-items-center mb-1">
+                                            <strong>{{ '사용자' if message.role == 'user' else '어시스턴트' }}</strong>
+                                            <span class="badge bg-{{ 'primary' if message.role == 'user' else 'success' }} bg-opacity-10">
+                                                {{ message.role }}
+                                            </span>
+                                        </div>
+                                        <div class="message-content">
+                                            {{ message.content }}
+                                        </div>
+                                    </div>
+                                {% endfor %}
+
+                                <!-- 피드백 섹션 -->
+                                <div class="feedback-section mt-3">
+                                    <button class="btn btn-sm btn-outline-primary"
+                                            onclick="showFeedbackForm('{{ dataset.filename }}', {{ loop.index0 }})">
+                                        피드백 남기기
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary"
+                                            onclick="showFeedbackHistory('{{ dataset.filename }}', {{ loop.index0 }})">
+                                        피드백 이력
+                                    </button>
+                                </div>
+                            </div>
+                        {% endfor %}
+
+                        {% if dataset.total_examples > dataset.examples|length %}
+                            <div class="text-center mt-4">
+                                <button class="btn btn-outline-primary"
+                                        onclick="loadMoreExamples('{{ dataset.filename }}', {{ dataset.examples|length }})">
+                                    더보기 ({{ dataset.examples|length }}/{{ dataset.total_examples }})
+                                </button>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="alert alert-info">
+            <h4 class="alert-heading">데이터셋이 없습니다</h4>
+            <p>먼저 데이터셋을 생성해주세요.</p>
+        </div>
+    {% endif %}
+</div>
+
+<!-- 통계 모달 -->
+<div class="modal fade" id="statsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">데이터셋 통계</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="stats-content">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 피드백 토스트 -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080">
+    <div class="toast" id="feedbackToast" role="alert">
+        <div class="toast-header">
+            <strong class="me-auto">알림</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body">
+            피드백이 저장되었습니다.
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 통계 데이터 표시
+async function showStats(filename) {
+    try {
+        const response = await fetch(`/api/datasets/${filename}/stats`);
+        const stats = await response.json();
+
+        if (response.ok) {
+            const statsHtml = `
+                <div class="stats-container">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>기본 정보</h6>
+                            <ul class="list-unstyled">
+                                <li>전체 예제 수: ${stats.total_examples}</li>
+                                <li>피드백 수: ${stats.total_feedback}</li>
+                                <li>피드백 비율: ${stats.feedback_rate.toFixed(1)}%</li>
+                                <li>평균 품질 점수: ${stats.avg_quality.toFixed(2)}/5</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>품질 분포</h6>
+                            <div class="quality-chart">
+                                ${Object.entries(stats.quality_distribution_percent).map(([rating, percent]) => `
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span>${rating}</span>
+                                        <div class="progress flex-grow-1 mx-2" style="height: 20px;">
+                                            <div class="progress-bar" style="width: ${percent}%">${percent.toFixed(1)}%</div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <h6>주요 이슈</h6>
+                            <div class="issues-chart">
+                                ${Object.entries(stats.issue_counts).map(([issue, count]) => `
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span>${issue}</span>
+                                        <span>${count}회</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('stats-content').innerHTML = statsHtml;
+            new bootstrap.Modal(document.getElementById('statsModal')).show();
+        } else {
+            throw new Error(stats.error || '통계 데이터를 불러올 수 없습니다.');
+        }
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+// 추가 예제 로드
+async function loadMoreExamples(filename, offset) {
+    try {
+        const response = await fetch(`/api/load_more/${filename}?offset=${offset}`);
+        const data = await response.json();
+
+        if (response.ok) {
+            const container = document.getElementById(`examples-container-${filename}`);
+            const loadMoreBtn = container.querySelector('button');
+
+            // 새 예제 추가
+            data.examples.forEach(example => {
+                const exampleHtml = createExampleHtml(example, filename);
+                container.insertBefore(exampleHtml, loadMoreBtn.parentElement);
+            });
+
+            // 더보기 버튼 업데이트
+            if (data.has_more) {
+                loadMoreBtn.textContent = `더보기 (${data.loaded_count}/${data.total_examples})`;
+            } else {
+                loadMoreBtn.parentElement.remove();
+            }
+        } else {
+            throw new Error(data.error || '예제를 불러올 수 없습니다.');
+        }
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+// 피드백 폼 표시
+function showFeedbackForm(filename, exampleId) {
+    const modalHtml = `
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">피드백 작성</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="feedbackForm">
+                        <div class="mb-3">
+                            <label class="form-label">품질 평가</label>
+                            <select class="form-select" name="quality_rating" required>
+                                <option value="">선택하세요</option>
+                                <option value="excellent">매우 좋음</option>
+                                <option value="good">좋음</option>
+                                <option value="acceptable">보통</option>
+                                <option value="poor">나쁨</option>
+                                <option value="unacceptable">매우 나쁨</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">이슈 태그</label>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" name="issues" value="grammar">
+                                <label class="form-check-label">문법</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" name="issues" value="context">
+                                <label class="form-check-label">문맥</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" name="issues" value="consistency">
+                                <label class="form-check-label">일관성</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" name="issues" value="naturalness">
+                                <label class="form-check-label">자연스러움</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" name="issues" value="completeness">
+                                <label class="form-check-label">완성도</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">상세 피드백</label>
+                            <textarea class="form-control" name="comment" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="button" class="btn btn-primary" onclick="submitFeedback('${filename}', ${exampleId})">
+                        제출
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const modalElement = document.createElement('div');
+    modalElement.className = 'modal fade';
+    modalElement.id = 'feedbackModal';
+    modalElement.innerHTML = modalHtml;
+
+    document.body.appendChild(modalElement);
+    const modal = new bootstrap.Modal(modalElement);
+    modal.show();
+
+    modalElement.addEventListener('hidden.bs.modal', () => {
+        modalElement.remove();
+    });
+}
+
+// 피드백 제출
+async function submitFeedback(filename, exampleId) {
+    const form = document.getElementById('feedbackForm');
+    const formData = new FormData(form);
+
+    const feedback = {
+        dataset_name: filename,
+        example_id: exampleId,
+        quality_rating: formData.get('quality_rating'),
+        issues: Array.from(formData.getAll('issues')),
+        comment: formData.get('comment')
+    };
+
+    try {
+        const response = await fetch('/feedback', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(feedback)
+        });
+
+        if (response.ok) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('feedbackModal'));
+            modal.hide();
+
+            // 토스트 메시지 표시
+            const toast = new bootstrap.Toast(document.getElementById('feedbackToast'));
+            toast.show();
+        } else {
+            throw new Error('피드백 저장에 실패했습니다.');
+        }
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+// 피드백 이력 표시
+async function showFeedbackHistory(filename, exampleId) {
+    try {
+        const response = await fetch(`/feedback/history/${filename}/${exampleId}`);
+        const history = await response.json();
+
+        const historyHtml = `
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">피드백 이력</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        ${history.length > 0 ? history.map(feedback => `
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2 text-muted">
+                                        ${new Date(feedback.timestamp).toLocaleString()}
+                                    </h6>
+                                    <p><strong>품질 평가:</strong> ${feedback.quality_rating}</p>
+                                    ${feedback.issues.length > 0 ? `
+                                        <p><strong>이슈:</strong> ${feedback.issues.join(', ')}</p>
+                                    ` : ''}
+                                    ${feedback.comment ? `
+                                        <p><strong>코멘트:</strong> ${feedback.comment}</p>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `).join('') : '<p class="text-muted">아직 피드백이 없습니다.</p>'}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const modalElement = document.createElement('div');
+        modalElement.className = 'modal fade';
+        modalElement.id = 'historyModal';
+        modalElement.innerHTML = historyHtml;
+
+        document.body.appendChild(modalElement);
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+
+        modalElement.addEventListener('hidden.bs.modal', () => {
+            modalElement.remove();
+        });
+    } catch (error) {
+        alert('피드백 이력을 불러오는데 실패했습니다.');
+    }
+}
+
+// 예제 HTML 생성 함수
+function createExampleHtml(example, filename) {
+    const div = document.createElement('div');
+    div.className = 'conversation-box mb-4';
+
+    // 시스템 메시지
+    let html = `
+        <div class="system-message mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>System Message</strong>
+                <span class="badge bg-secondary">시스템 프롬프트</span>
+            </div>
+            ${example.messages[0].content}
+        </div>
+    `;
+
+    // 대화 메시지
+    example.messages.slice(1).forEach(message => {
+        html += `
+            <div class="message ${message.role}">
+                <div class="message-header d-flex justify-content-between align-items-center mb-1">
+                    <strong>${message.role === 'user' ? '사용자' : '어시스턴트'}</strong>
+                    <span class="badge bg-${message.role === 'user' ? 'primary' : 'success'} bg-opacity-10">
+                        ${message.role}
+                    </span>
+                </div>
+                <div class="message-content">
+                    ${message.content}
+                </div>
+            </div>
+        `;
+    });
+
+    // 피드백 섹션
+    html += `
+        <div class="feedback-section mt-3">
+            <button class="btn btn-sm btn-outline-primary"
+                    onclick="showFeedbackForm('${filename}', ${example.id})">
+                피드백 남기기
+            </button>
+            <button class="btn btn-sm btn-outline-secondary"
+                    onclick="showFeedbackHistory('${filename}', ${example.id})">
+                피드백 이력
+            </button>
+        </div>
+    `;
+
+    div.innerHTML = html;
+    return div;
+}
+
+// 페이지 로드 시 초기화
+document.addEventListener('DOMContentLoaded', function() {
+    // 토스트 초기화
+    const toastElList = [].slice.call(document.querySelectorAll('.toast'));
+    toastElList.map(function(toastEl) {
+        return new bootstrap.Toast(toastEl, {
+            autohide: true,
+            delay: 3000
+        });
+    });
+
+    // 모달 이벤트 리스너 초기화
+    document.body.addEventListener('click', function(e) {
+        if (e.target.classList.contains('btn-close') || e.target.classList.contains('modal-backdrop')) {
+            const modal = bootstrap.Modal.getInstance(e.target.closest('.modal'));
+            if (modal) {
+                modal.hide();
+            }
+        }
+    });
+});
+</script>
+{% endblock %}
