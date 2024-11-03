@@ -7,6 +7,8 @@ KoGPT-Labeler는 한국어 ChatGPT 파인튜닝을 위한 대규모 데이터셋
 ![img_1.png](img_1.png)
 ![img_2.png](img_2.png)
 ![img_3.png](img_3.png)
+![img_4.png](img_4.png)
+![img_5.png](img_5.png)
 
 ### 주요 기능
 1. 문서 처리 및 데이터 추출
