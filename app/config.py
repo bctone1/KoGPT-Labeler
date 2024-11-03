@@ -7,7 +7,7 @@ class Config:
     SECRET_KEY = 'dev-key-change-in-production'
 
     # OpenAI API 설정
-    OPENAI_API_KEY = "sk-proj-YTp6Wg5I2qBDNKGDiLrgT3BlbkFJAv6UUMTKwDFFjVAkovFO"  # 여기에 실제 API 키를 입력하세요
+    OPENAI_API_KEY = "..."  # 여기에 실제 API 키를 입력하세요
 
     # 파일 업로드 설정
     UPLOAD_FOLDER = BASE_DIR / 'data' / 'uploads'
