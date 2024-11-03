@@ -585,3 +585,59 @@ def download_dataset(filename):
     except Exception as e:
         logger.error(f"파일 다운로드 중 오류: {str(e)}")
         return str(e), 500
+
+
+@bp.route('/feedback', methods=['POST'])
+def submit_feedback():
+    """피드백 제출"""
+    try:
+        feedback_data = request.json
+        if not feedback_data:
+            return jsonify({'error': '피드백 데이터가 없습니다.'}), 400
+
+        required_fields = {'dataset_name', 'example_id', 'quality_rating'}
+        if not all(field in feedback_data for field in required_fields):
+            return jsonify({'error': '필수 필드가 누락되었습니다.'}), 400
+
+        # 피드백 데이터 추가 정보
+        feedback_data.update({
+            'timestamp': datetime.now().isoformat(),
+            'reviewer_ip': request.remote_addr
+        })
+
+        # 피드백 저장
+        feedback_file = config.FEEDBACK_FOLDER / f"feedback_{feedback_data['dataset_name']}.jsonl"
+        config.FEEDBACK_FOLDER.mkdir(parents=True, exist_ok=True)
+
+        with open(feedback_file, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(feedback_data, ensure_ascii=False) + '\n')
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        logger.error(f"피드백 저장 중 오류: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/feedback/history/<dataset>/<example_id>')
+def feedback_history(dataset, example_id):
+    """피드백 이력 조회"""
+    try:
+        feedback_file = config.FEEDBACK_FOLDER / f"feedback_{dataset}.jsonl"
+        if not feedback_file.exists():
+            return jsonify([])
+
+        feedback_history = []
+        with open(feedback_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                feedback = json.loads(line)
+                if str(feedback['example_id']) == str(example_id):
+                    feedback_history.append(feedback)
+
+        return jsonify(feedback_history)
+
+    except Exception as e:
+        logger.error(f"피드백 이력 조회 중 오류: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
