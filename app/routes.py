@@ -641,3 +641,55 @@ def feedback_history(dataset, example_id):
         return jsonify({'error': str(e)}), 500
 
 
+@bp.route('/feedback/stats')
+def feedback_stats():
+    """피드백 통계"""
+    try:
+        stats = {
+            'total_reviews': 0,
+            'quality_distribution': {},
+            'common_issues': {},
+            'datasets': {}
+        }
+
+        for feedback_file in config.FEEDBACK_FOLDER.glob('feedback_*.jsonl'):
+            with open(feedback_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    feedback = json.loads(line)
+
+                    stats['total_reviews'] += 1
+
+                    rating = feedback.get('quality_rating')
+                    if rating:
+                        stats['quality_distribution'][rating] = (
+                                stats['quality_distribution'].get(rating, 0) + 1
+                        )
+
+                    for issue in feedback.get('issues', []):
+                        stats['common_issues'][issue] = (
+                                stats['common_issues'].get(issue, 0) + 1
+                        )
+
+                    dataset = feedback.get('dataset_name')
+                    if dataset:
+                        if dataset not in stats['datasets']:
+                            stats['datasets'][dataset] = {
+                                'reviews': 0,
+                                'quality_scores': []
+                            }
+                        dataset_stats = stats['datasets'][dataset]
+                        dataset_stats['reviews'] += 1
+                        if rating:
+                            dataset_stats['quality_scores'].append(rating)
+
+        # 데이터셋별 평균 품질 점수 계산
+        for dataset_stats in stats['datasets'].values():
+            scores = dataset_stats.pop('quality_scores', [])
+            if scores:
+                dataset_stats['avg_quality'] = sum(scores) / len(scores)
+
+        return jsonify(stats)
+
+    except Exception as e:
+        logger.error(f"피드백 통계 생성 중 오류: {str(e)}")
+        return jsonify({'error': str(e)}), 500
